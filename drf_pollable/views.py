@@ -13,7 +13,8 @@ One read-only view serves every registered endpoint. It handles, in order:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from typing import Any
 
 from django.core.cache import cache as default_cache

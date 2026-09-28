@@ -17,7 +17,8 @@ from __future__ import annotations
 
 from django.urls import include, path
 
-from .registration import PollRegistry, registry as default_registry
+from .registration import PollRegistry
+from .registration import registry as default_registry
 
 
 class PollRouter:

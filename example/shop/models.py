@@ -22,3 +22,6 @@ class Notification(models.Model):
     message = models.CharField(max_length=200)
     read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.message

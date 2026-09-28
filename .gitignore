@@ -12,3 +12,4 @@ venv/
 htmlcov/
 db.sqlite3
 .DS_Store
+.lintenv/

@@ -16,9 +16,11 @@ time, when Django's app registry may not be populated yet.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field as dataclass_field
+from collections.abc import Sequence
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import datetime
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 
 from django.apps import apps
 from django.core.exceptions import FieldDoesNotExist, ValidationError
