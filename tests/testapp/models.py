@@ -42,6 +42,13 @@ class Ticket(models.Model):
             "fields": ["subject", "state"],
             "min_poll_interval": 4,
         }
+        list = {
+            "name": "ticket-list",
+            "fields": ["subject", "state"],
+            "min_poll_interval": 3,
+            "limit": 1,
+            "order_by": ["-id"],
+        }
 
 
 class Notification(models.Model):

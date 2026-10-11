@@ -29,6 +29,12 @@ class IntervalNegotiationTests(PollTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Retry-After"], "5")
 
+    def test_zero_and_negative_intervals_are_ignored(self):
+        url = f"/poll/order-interval/{self.order.pk}/"
+        for raw in ("0", "-5"):
+            response = self.poll(url, interval=raw)
+            self.assertEqual(response["Retry-After"], "5")
+
 
 class BackoffTests(PollTestCase):
     def test_interval_grows_while_the_value_is_unchanged(self):
@@ -54,6 +60,22 @@ class BackoffTests(PollTestCase):
             last = int(self.poll(url)["Retry-After"])
         self.assertEqual(last, 60)
 
+    def test_backoff_is_per_client(self):
+        from django.contrib.auth.models import User
+
+        order = Order.objects.create(status="pending")
+        url = f"/poll/order-backoff/{order.pk}/"
+        alice = User.objects.create_user("backoff-alice")
+        bob = User.objects.create_user("backoff-bob")
+
+        self.client.force_login(alice)
+        self.poll(url)
+        self.poll(url)
+        self.assertEqual(int(self.poll(url)["Retry-After"]), 8)
+
+        self.client.force_login(bob)
+        self.assertEqual(int(self.poll(url)["Retry-After"]), 2)
+
 
 class IntervalEnforcementTests(PollTestCase):
     def setUp(self):
@@ -68,7 +90,15 @@ class IntervalEnforcementTests(PollTestCase):
         self.assertEqual(self.poll(self.url).status_code, 200)
         response = self.poll(self.url)
         self.assertEqual(response.status_code, 429)
-        self.assertIn("Retry-After", response)
+        self.assertGreaterEqual(int(response["Retry-After"]), 1)
+        self.assertLessEqual(int(response["Retry-After"]), 30)
+
+    def test_enforcement_is_per_client(self):
+        self.client.get(self.url, HTTP_X_FORWARDED_FOR="1.1.1.1")
+        early = self.client.get(self.url, HTTP_X_FORWARDED_FOR="1.1.1.1")
+        other = self.client.get(self.url, HTTP_X_FORWARDED_FOR="2.2.2.2")
+        self.assertEqual(early.status_code, 429)
+        self.assertEqual(other.status_code, 200)
 
     def test_enforcement_is_per_object(self):
         # Being early on one order must not lock the client out of another.

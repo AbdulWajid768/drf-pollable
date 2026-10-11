@@ -45,6 +45,23 @@ class FieldPollingTests(PollTestCase):
 
     def test_only_get_is_allowed(self):
         self.assertEqual(self.client.post(self.url).status_code, 405)
+        for method in ("put", "patch", "delete"):
+            self.assertEqual(getattr(self.client, method)(self.url).status_code, 405)
+
+    def test_head_returns_the_polling_headers(self):
+        response = self.client.head(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ETag", response)
+        self.assertIn("Retry-After", response)
+
+    def test_options_advertises_get(self):
+        response = self.client.options(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("GET", response["Allow"])
+
+    def test_etag_header_quotes_the_body_version(self):
+        response = self.poll(self.url)
+        self.assertEqual(response["ETag"], f'"{response.json()["version"]}"')
 
 
 class DoneWhenTests(PollTestCase):
@@ -109,6 +126,45 @@ class ConditionalRequestTests(PollTestCase):
         response = self.client.get(self.url, HTTP_IF_MODIFIED_SINCE=last_modified)
         self.assertEqual(response.status_code, 304)
 
+    def test_stale_if_modified_since_returns_200(self):
+        response = self.client.get(self.url, HTTP_IF_MODIFIED_SINCE="Thu, 01 Jan 1970 00:00:00 GMT")
+        self.assertEqual(response.status_code, 200)
+
+    def test_garbage_if_modified_since_returns_200(self):
+        response = self.client.get(self.url, HTTP_IF_MODIFIED_SINCE="not-a-date")
+        self.assertEqual(response.status_code, 200)
+
+    def test_if_none_match_wins_over_if_modified_since(self):
+        # RFC 9110: a present If-None-Match is decisive, even when it misses
+        # and If-Modified-Since would have produced a 304.
+        last_modified = self.poll(self.url)["Last-Modified"]
+        response = self.client.get(
+            self.url,
+            HTTP_IF_NONE_MATCH='"not-the-current-etag"',
+            HTTP_IF_MODIFIED_SINCE=last_modified,
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_weak_etag_matches(self):
+        etag = self.poll(self.url)["ETag"]
+        response = self.client.get(self.url, HTTP_IF_NONE_MATCH=f"W/{etag}")
+        self.assertEqual(response.status_code, 304)
+
+    def test_one_matching_etag_among_several_returns_304(self):
+        etag = self.poll(self.url)["ETag"]
+        response = self.client.get(self.url, HTTP_IF_NONE_MATCH=f'"stale", {etag}')
+        self.assertEqual(response.status_code, 304)
+
+    def test_malformed_etag_does_not_short_circuit(self):
+        response = self.client.get(self.url, HTTP_IF_NONE_MATCH='"unterminated')
+        self.assertEqual(response.status_code, 200)
+
+    def test_304_still_carries_etag_and_cache_control(self):
+        etag = self.poll(self.url)["ETag"]
+        response = self.poll(self.url, etag=etag)
+        self.assertEqual(response["ETag"], etag)
+        self.assertEqual(response["Cache-Control"], "no-cache, private")
+
 
 class EnvelopeTests(PollTestCase):
     def setUp(self):
@@ -120,6 +176,14 @@ class EnvelopeTests(PollTestCase):
         self.assertEqual(response.json(), "pending")
         # Metadata is still available in headers.
         self.assertIn("Retry-After", response)
+        self.assertIn("ETag", response)
+
+    def test_bare_mode_still_supports_304(self):
+        url = f"/poll/order-bare/{self.order.pk}/"
+        etag = self.poll(url)["ETag"]
+        response = self.poll(url, etag=etag)
+        self.assertEqual(response.status_code, 304)
+        self.assertEqual(response.content, b"")
 
     def test_instance_source_returns_only_allow_listed_fields(self):
         self.order.progress = 40
@@ -139,13 +203,19 @@ class LifecycleHeaderTests(PollTestCase):
     def test_disabled_endpoint_returns_503_with_retry_after(self):
         response = self.poll(f"/poll/order-disabled/{self.order.pk}/")
         self.assertEqual(response.status_code, 503)
-        self.assertIn("Retry-After", response)
+        self.assertEqual(response["Retry-After"], "3600")
+
+    def test_disabled_endpoint_does_not_look_up_the_object(self):
+        # The kill switch runs before the source, so a missing row is still 503.
+        response = self.poll("/poll/order-disabled/999999/")
+        self.assertEqual(response.status_code, 503)
 
     def test_deprecated_endpoint_advertises_sunset(self):
         response = self.poll(f"/poll/order-legacy/{self.order.pk}/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Sunset", response)
+        self.assertEqual(response["Sunset"], "2027-01-01")
         self.assertEqual(response["Deprecation"], "true")
+        self.assertIn("Use order-status instead.", response["Link"])
 
 
 class ValueCacheTests(PollTestCase):
@@ -163,4 +233,19 @@ class ValueCacheTests(PollTestCase):
         url = f"/poll/order-status/{order.pk}/"
         self.poll(url)
         Order.objects.filter(pk=order.pk).update(status="shipped")
+        self.assertEqual(self.poll(url).json()["value"], "shipped")
+
+    def test_cache_is_not_shared_across_users(self):
+        from django.contrib.auth.models import User
+
+        order = Order.objects.create(status="pending")
+        url = f"/poll/order-cached/{order.pk}/"
+        alice = User.objects.create_user("cache-alice")
+        bob = User.objects.create_user("cache-bob")
+
+        self.client.force_login(alice)
+        self.assertEqual(self.poll(url).json()["value"], "pending")
+        Order.objects.filter(pk=order.pk).update(status="shipped")
+
+        self.client.force_login(bob)
         self.assertEqual(self.poll(url).json()["value"], "shipped")

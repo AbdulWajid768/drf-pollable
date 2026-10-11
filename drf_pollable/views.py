@@ -19,6 +19,7 @@ from typing import Any
 
 from django.core.cache import cache as default_cache
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -93,6 +94,11 @@ class PollResponseMixin:
         if cache_key:
             cached = default_cache.get(cache_key)
             if cached is not None:
+                # The cached payload has no instance. Re-check access so a hit
+                # cannot outlive a scope change or an object-permission change.
+                if self._needs_object_access_check(config):
+                    obj = self.registration.source.get_object(request, **kwargs)
+                    self.check_object_permissions(request, obj)
                 return self._result_from_cache(cached), cached["version"]
 
         result = self.registration.source.get_result(request, **kwargs)
@@ -110,6 +116,26 @@ class PollResponseMixin:
             )
 
         return result, version
+
+    def _needs_object_access_check(self, config) -> bool:
+        """True when a cache hit must not skip row-level visibility.
+
+        Open endpoints (the default ``AllowAny``, no ``scope``) keep the cache
+        cheap. Anything that can hide a row re-fetches it before serving the
+        cached value.
+        """
+        source = self.registration.source
+        if not getattr(source, "requires_object", False):
+            return False
+        if getattr(source, "scope", None) is not None:
+            return True
+        if config.get("permission_classes"):
+            return True
+        return self._has_non_default_permissions()
+
+    def _has_non_default_permissions(self) -> bool:
+        classes = getattr(self, "permission_classes", None) or ()
+        return any(permission is not AllowAny for permission in classes)
 
     def _value_cache_key(self, request, kwargs, config) -> str | None:
         if not config["cache_timeout"]:
@@ -217,6 +243,10 @@ class PollView(PollResponseMixin, APIView):
 
     def get(self, request, *args, **kwargs):
         return self.poll_response(request, **kwargs)
+
+    def head(self, request, *args, **kwargs):
+        # Declared in http_method_names; Django does not route HEAD to get().
+        return self.get(request, *args, **kwargs)
 
     def get_view_name(self) -> str:  # pragma: no cover - cosmetic
         return f"Poll: {self.registration.name}"

@@ -47,6 +47,14 @@ class DeclarationStyleTests(PollTestCase):
         Ticket.objects.filter(pk=self.ticket.pk).update(state="closed")
         self.assertTrue(self.poll(f"/poll/ticket-state/{self.ticket.pk}/").json()["done"])
 
+    def test_model_meta_list_style(self):
+        # limit=1 and order_by=-id keep only the newest row, with no object id in the URL.
+        Ticket.objects.create(subject="newer", state="open")
+        body = self.poll("/poll/ticket-list/").json()
+        self.assertEqual(body["count"], 1)
+        self.assertEqual(body["value"], [{"subject": "newer", "state": "open"}])
+        self.assertEqual(self.poll("/poll/ticket-list/")["Retry-After"], "3")
+
     # -- style 4: settings ENDPOINTS --------------------------------------
     def test_settings_style(self):
         response = self.poll(f"/poll/ticket-from-settings/{self.ticket.pk}/")
@@ -90,6 +98,7 @@ class RegistryTests(PollTestCase):
             "order-class",        # class
             "ticket-state",       # model PollingMeta (field)
             "ticket-detail",      # model PollingMeta (instance)
+            "ticket-list",        # model PollingMeta (list)
             "ticket-from-settings",  # settings
         ]:
             self.assertIn(name, registry, f"{name} was not registered")
@@ -126,3 +135,14 @@ class ManagementCommandTests(PollTestCase):
         output = out.getvalue()
         self.assertIn("order-status", output)
         self.assertNotIn("ticket-detail", output)
+        self.assertNotIn("authentication_classes", output)
+
+    def test_list_polls_verbose_includes_the_full_config(self):
+        out = StringIO()
+        call_command("list_polls", name="order-status", verbose=True, stdout=out)
+        self.assertIn("authentication_classes", out.getvalue())
+
+    def test_list_polls_unknown_name_warns(self):
+        out = StringIO()
+        call_command("list_polls", name="does-not-exist", stdout=out)
+        self.assertIn("No polling endpoints", out.getvalue())

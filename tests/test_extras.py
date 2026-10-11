@@ -25,6 +25,9 @@ class UpgradeHintTests(PollTestCase):
         Order.objects.filter(pk=order.pk).update(status="delivered")
         self.assertIn("X-Poll-Upgrade-Hint", self.poll(url))
 
+        # One unchanged poll clears the change streak, so the hint goes away.
+        self.assertNotIn("X-Poll-Upgrade-Hint", self.poll(url))
+
     def test_hint_is_absent_for_a_settled_value(self):
         order = Order.objects.create(status="pending")
         url = f"/poll/order-chatty/{order.pk}/"
@@ -81,6 +84,26 @@ class TestingHelperTests(PollTestCase):
         with self.assertRaises(AssertionError):
             poll_until(self.client, self.url, lambda body: body["done"], max_polls=2)
 
+    def test_assert_poll_headers_can_skip_the_etag(self):
+        assert_poll_headers(_Response({"Retry-After": "5"}), expect_etag=False)
+
+    def test_assert_poll_headers_rejects_a_bad_retry_after(self):
+        for retry_after in ("soon", "0", "-1"):
+            with self.assertRaises(AssertionError):
+                assert_poll_headers(_Response({"Retry-After": retry_after, "ETag": '"a"'}))
+
+    def test_assert_poll_headers_requires_an_etag_by_default(self):
+        with self.assertRaises(AssertionError):
+            assert_poll_headers(_Response({"Retry-After": "5"}))
+
+    def test_assert_not_modified_rejects_a_body(self):
+        with self.assertRaises(AssertionError):
+            assert_not_modified(_Response({}, status=304, content=b"{}"))
+
+    def test_assert_not_modified_rejects_other_statuses(self):
+        with self.assertRaises(AssertionError):
+            assert_not_modified(_Response({}, status=200))
+
     def test_clear_poll_state_resets_backoff(self):
         url = f"/poll/order-backoff/{self.order.pk}/"
         self.client.get(url)
@@ -94,3 +117,16 @@ class TestingHelperTests(PollTestCase):
 class _HeaderlessResponse:
     def __contains__(self, key):
         return False
+
+
+class _Response:
+    def __init__(self, headers, status=200, content=b""):
+        self._headers = headers
+        self.status_code = status
+        self.content = content
+
+    def __contains__(self, key):
+        return key in self._headers
+
+    def __getitem__(self, key):
+        return self._headers[key]
