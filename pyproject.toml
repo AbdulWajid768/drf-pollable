@@ -52,6 +52,10 @@ Changelog = "https://github.com/AbdulWajid768/drf-pollable/blob/main/CHANGELOG.m
 include = ["drf_pollable*"]
 
 [tool.pytest.ini_options]
+# The test suite imports `tests.settings`, so the repo root must be importable.
+# `python -m pytest` adds it implicitly; a bare `pytest` does not, and CI runs
+# the bare form.
+pythonpath = ["."]
 DJANGO_SETTINGS_MODULE = "tests.settings"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
