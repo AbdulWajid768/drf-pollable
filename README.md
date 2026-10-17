@@ -13,16 +13,19 @@ register_poll("order-status", source="shop.Order.status", done_when={"delivered"
 ```console
 $ curl -i /api/poll/order-status/1/
 HTTP/1.1 200 OK
-ETag: "a844bf4f973c"
-Retry-After: 3
+ETag: "a844bf4f973cc84b8110"
+Retry-After: 5
 Cache-Control: no-cache, private
 
-{"value": "pending", "display": "Pending", "done": false,
- "next_poll_in": 3, "version": "a844bf4f973c", "polled_at": "..."}
+{"value": "pending", "version": "a844bf4f973cc84b8110", "done": false,
+ "next_poll_in": 5, "polled_at": "...", "display": "Pending"}
 ```
 
 That is the whole feature: the view, the serializer, the URL, the `ETag`/`304`
 handshake, the `Retry-After` pacing, and the throttles — from one line.
+
+For when to poll, when to choose a socket, webhook, or push instead, and the
+client contract that makes the headers matter, see **[GUIDE.md](https://github.com/AbdulWajid768/drf-pollable/blob/main/GUIDE.md)**.
 
 ---
 
@@ -53,6 +56,7 @@ that tells the client to stop entirely.
 **When you genuinely need sub-second bidirectional updates — chat, collaborative
 cursors, trading tickers — use WebSockets.** This package does not try to
 replace that, and will even hint when your data looks like it wants one.
+[GUIDE.md](https://github.com/AbdulWajid768/drf-pollable/blob/main/GUIDE.md) is the full comparison and the usage rules.
 
 ---
 
@@ -69,6 +73,8 @@ INSTALLED_APPS = [..., "rest_framework", "drf_pollable"]
 
 ```python
 # urls.py
+from django.urls import path
+
 from drf_pollable import poll_urls
 
 urlpatterns = [path("api/", poll_urls())]
@@ -286,10 +292,10 @@ timestamp — `auto_now` doesn't fire on `QuerySet.update()`, which would hand
 clients a stale `304`). An unchanged poll costs a header exchange:
 
 ```console
-$ curl -i -H 'If-None-Match: "a844bf4f973c"' /api/poll/order-status/1/
+$ curl -i -H 'If-None-Match: "a844bf4f973cc84b8110"' /api/poll/order-status/1/
 HTTP/1.1 304 Not Modified
-ETag: "a844bf4f973c"
-Retry-After: 3
+ETag: "a844bf4f973cc84b8110"
+Retry-After: 5
 ```
 
 `Last-Modified` / `If-Modified-Since` work too. For hot endpoints,
@@ -365,7 +371,7 @@ terminal state; `assert_not_modified(response)` checks the `304` path.
 ## Development
 
 ```bash
-python runtests.py          # 111 tests, needs only Django + DRF
+python runtests.py          # 300 tests, needs only Django + DRF
 cd example && python manage.py migrate && python manage.py seed && python manage.py runserver
 curl -i http://localhost:8000/api/poll/order-status/1/
 ```
