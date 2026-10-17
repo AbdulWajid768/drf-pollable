@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] — 2026-09-28
+## [0.1.0] — 2026-10-17
 
 First release. Generates read-only polling ("status") endpoints for Django REST
 Framework from a model field, instance, queryset, or callable.

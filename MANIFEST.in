@@ -1,0 +1,21 @@
+include LICENSE
+include README.md
+include CHANGELOG.md
+include GUIDE.md
+include pyproject.toml
+include runtests.py
+
+# setuptools auto-includes tests/test_*.py but not the settings module, the
+# URLconf, or the test app they import -- which ships a tests/ tree that
+# cannot run. Graft the whole thing so a build from sdist is verifiable.
+graft tests
+graft example
+
+prune .github
+prune .idea
+prune .ruff_cache
+prune .venv
+global-exclude __pycache__/*
+global-exclude *.py[cod]
+global-exclude *.sqlite3
+global-exclude .DS_Store
