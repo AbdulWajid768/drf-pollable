@@ -38,9 +38,7 @@ class DeclarationStyleTests(PollTestCase):
 
     def test_model_meta_instance_style(self):
         response = self.poll(f"/poll/ticket-detail/{self.ticket.pk}/")
-        self.assertEqual(
-            response.json()["value"], {"subject": "Printer on fire", "state": "open"}
-        )
+        self.assertEqual(response.json()["value"], {"subject": "Printer on fire", "state": "open"})
         self.assertEqual(response["Retry-After"], "4")
 
     def test_model_meta_done_when(self):
@@ -94,11 +92,11 @@ class DeclarationStyleTests(PollTestCase):
 class RegistryTests(PollTestCase):
     def test_every_style_is_present_in_the_registry(self):
         for name in [
-            "order-status",       # function
-            "order-class",        # class
-            "ticket-state",       # model PollingMeta (field)
-            "ticket-detail",      # model PollingMeta (instance)
-            "ticket-list",        # model PollingMeta (list)
+            "order-status",  # function
+            "order-class",  # class
+            "ticket-state",  # model PollingMeta (field)
+            "ticket-detail",  # model PollingMeta (instance)
+            "ticket-list",  # model PollingMeta (list)
             "ticket-from-settings",  # settings
         ]:
             self.assertIn(name, registry, f"{name} was not registered")

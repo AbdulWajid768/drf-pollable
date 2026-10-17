@@ -137,9 +137,7 @@ class IntervalTests(SimpleTestCase):
         self.assertEqual(compute_next_interval(config, requested=9999), 60)
 
     def test_jitter_stays_within_bounds(self):
-        config = resolve_config(
-            {"min_poll_interval": 10, "max_poll_interval": 100, "jitter": 0.2}
-        )
+        config = resolve_config({"min_poll_interval": 10, "max_poll_interval": 100, "jitter": 0.2})
         values = {compute_next_interval(config) for _ in range(200)}
         self.assertTrue(all(10 <= value <= 13 for value in values), values)
         # With jitter on, we should not always land on the same number.
@@ -159,9 +157,7 @@ class IntervalTests(SimpleTestCase):
         self.assertGreater(len(set(values)), 1)
 
     def test_jitter_can_be_suppressed(self):
-        config = resolve_config(
-            {"min_poll_interval": 10, "max_poll_interval": 100, "jitter": 0.5}
-        )
+        config = resolve_config({"min_poll_interval": 10, "max_poll_interval": 100, "jitter": 0.5})
         self.assertEqual(compute_next_interval(config, apply_jitter=False), 10)
 
     def test_non_exponential_backoff_ignores_the_streak(self):

@@ -206,11 +206,13 @@ class DeclarationHelperTests(PollTestCase):
             source = "testapp.Order.status"
 
         with self.assertRaises(PollableConfigurationError):
+
             class Incomplete(Base):
                 pass
 
     def test_endpoint_without_a_source_is_rejected(self):
         with self.assertRaises(PollableConfigurationError):
+
             class NoSource(PollEndpoint):
                 name = "no-source-endpoint"
 
@@ -228,9 +230,7 @@ class ThrottleClassAssemblyTests(PollTestCase):
         self.assertIn(PollBurstThrottle, classes)
 
     def test_interval_throttle_is_not_duplicated(self):
-        classes = _throttle_classes(
-            {"throttle_classes": [PollIntervalThrottle, PollBurstThrottle]}
-        )
+        classes = _throttle_classes({"throttle_classes": [PollIntervalThrottle, PollBurstThrottle]})
         self.assertEqual(classes.count(PollIntervalThrottle), 1)
 
     def test_a_subclass_counts_as_the_interval_throttle(self):

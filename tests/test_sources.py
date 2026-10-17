@@ -250,9 +250,7 @@ class FieldSourceBehaviorTests(PollTestCase):
 
     def test_custom_lookup_kwarg_and_field(self):
         order = Order.objects.create(status="shipped")
-        source = build_source(
-            Order, field="status", lookup_field="pk", lookup_url_kwarg="order_id"
-        )
+        source = build_source(Order, field="status", lookup_field="pk", lookup_url_kwarg="order_id")
         result = source.get_result(_FakeRequest(), order_id=order.pk)
         self.assertEqual(result.value, "shipped")
 
@@ -376,9 +374,7 @@ class InstanceAndQuerySetBehaviorTests(PollTestCase):
 
     def test_cursor_is_omitted_when_the_since_field_is_not_a_timestamp(self):
         Notification.objects.create(message="hello")
-        source = build_source(
-            Notification, as_list=True, fields=["message"], since_field="message"
-        )
+        source = build_source(Notification, as_list=True, fields=["message"], since_field="message")
         self.assertNotIn("cursor", source.get_result(_FakeRequest()).extra)
 
     def test_scope_is_applied_to_the_queryset(self):
@@ -399,9 +395,7 @@ class CallableSourceBehaviorTests(PollTestCase):
         def status(request, **kwargs):
             return kwargs["item_id"]
 
-        source = build_source(
-            status, requires_object=True, lookup_url_kwarg="item_id", done_when=5
-        )
+        source = build_source(status, requires_object=True, lookup_url_kwarg="item_id", done_when=5)
         self.assertTrue(source.requires_object)
         self.assertEqual(source.lookup_url_kwarg, "item_id")
         result = source.get_result(_FakeRequest(), item_id=5)

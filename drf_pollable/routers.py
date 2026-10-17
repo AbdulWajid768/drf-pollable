@@ -37,9 +37,7 @@ class PollRouter:
             prefix = self.prefix if self.prefix is not None else registration.config["url_prefix"]
             path_suffix = registration.url_path
             route = f"{prefix.strip('/')}/{path_suffix}" if prefix else path_suffix
-            patterns.append(
-                path(route, registration.view.as_view(), name=registration.url_name)
-            )
+            patterns.append(path(route, registration.view.as_view(), name=registration.url_name))
         return patterns
 
     def __iter__(self):
