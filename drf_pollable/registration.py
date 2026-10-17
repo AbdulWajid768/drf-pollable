@@ -47,8 +47,7 @@ class PollRegistration:
         if not self.source.requires_object:
             return f"{self.name}/"
         kwarg = getattr(self.source, "lookup_url_kwarg", "pk")
-        regex = self.config["lookup_regex"]
-        return f"{self.name}/<str:{kwarg}>/" if regex == "[^/.]+" else f"{self.name}/<{kwarg}>/"
+        return f"{self.name}/<str:{kwarg}>/"
 
     @property
     def url_name(self) -> str:

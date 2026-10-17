@@ -78,7 +78,6 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "url_prefix": "poll",
     "lookup_field": "pk",
     "lookup_url_kwarg": None,
-    "lookup_regex": "[^/.]+",
 }
 
 _cache: dict[str, Any] = {}

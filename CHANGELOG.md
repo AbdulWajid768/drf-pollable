@@ -60,6 +60,13 @@ Framework from a model field, instance, queryset, or callable.
   HTTP dates have one-second resolution, a modification within the second it
   was issued is reported as a full `200` rather than risked as a `304`.
 
+### Removed
+
+- The undocumented `lookup_regex` option. It accepted a value, discarded it,
+  and emitted a converter-less URL that matched exactly as before, so a caller
+  restricting a lookup got no restriction. Setting it now raises, like any
+  other unknown option.
+
 ### Notes
 
 - Version tokens hash the **value**, not a timestamp field. An `auto_now` column
