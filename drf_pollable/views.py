@@ -34,7 +34,7 @@ from .headers import (
 )
 from .intervals import compute_next_interval, parse_requested_interval
 from .sources import PollResult
-from .state import client_identifier, default_store, state_key
+from .state import client_identifier, default_store, state_key, version_seen_key
 
 
 class PollResponseMixin:
@@ -69,7 +69,11 @@ class PollResponseMixin:
         )
 
         etag = etag_for(version) if config["send_etag"] else None
-        last_modified = result.last_modified if config["send_last_modified"] else None
+        last_modified = (
+            self._effective_last_modified(result, version, kwargs)
+            if config["send_last_modified"]
+            else None
+        )
 
         if self._is_not_modified(request, etag, last_modified, config):
             response = Response(status=status.HTTP_304_NOT_MODIFIED)
@@ -180,6 +184,28 @@ class PollResponseMixin:
         )
 
     # -- conditional requests ---------------------------------------------
+    def _effective_last_modified(self, result, version, kwargs):
+        """A modification time that tracks the *value*, like the ETag does.
+
+        ``result.last_modified`` normally comes from an ``auto_now`` column,
+        which does not fire on ``QuerySet.update()``. Trusting it alone would
+        answer ``If-Modified-Since`` with a stale ``304`` -- precisely the
+        failure :func:`make_version` avoids for ``ETag``, and worse here
+        because the client is told nothing changed while the body it never
+        receives says otherwise. Folding in when this version was first seen
+        keeps the two validators telling the same story.
+        """
+        seen = default_store.changed_at(
+            version_seen_key(self.registration.name, self._object_id(kwargs)), version
+        )
+        changed = datetime.fromtimestamp(seen, tz=dt_timezone.utc)
+        source_value = result.last_modified
+        if source_value is None:
+            return changed
+        if source_value.tzinfo is None:
+            source_value = source_value.replace(tzinfo=dt_timezone.utc)
+        return max(source_value, changed)
+
     @staticmethod
     def _is_not_modified(request, etag, last_modified, config) -> bool:
         """RFC 9110: ``If-None-Match`` wins outright when present."""

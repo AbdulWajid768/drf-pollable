@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -49,8 +50,18 @@ def if_none_match_matches(request, etag: str) -> bool:
     return any(_strip_weak(candidate) == target for candidate in client_etags)
 
 
-def if_modified_since_satisfied(request, last_modified: datetime | None) -> bool:
-    """True when the resource has not changed since the client's copy."""
+def if_modified_since_satisfied(
+    request, last_modified: datetime | None, now: float | None = None
+) -> bool:
+    """True when the resource provably has not changed since the client's copy.
+
+    ``Last-Modified`` is a *weak* validator: HTTP dates carry only one-second
+    resolution, so a value that changes in the same second the client fetched
+    it is indistinguishable from one that did not. Requiring the modification
+    to sit in a strictly earlier second than this request closes that window --
+    the cost is a single full response for a value that just changed, instead
+    of a ``304`` that strands the client on a stale copy.
+    """
     if last_modified is None:
         return False
     header = request.META.get("HTTP_IF_MODIFIED_SINCE")
@@ -59,8 +70,11 @@ def if_modified_since_satisfied(request, last_modified: datetime | None) -> bool
     since = parse_http_date_safe(header)
     if since is None:
         return False
-    # HTTP dates have one-second resolution, so truncate before comparing.
-    return int(last_modified.timestamp()) <= since
+    modified_at = int(last_modified.timestamp())
+    if modified_at > since:
+        return False
+    # Within the current second the timestamp cannot be trusted yet.
+    return modified_at < int(time.time() if now is None else now)
 
 
 def format_last_modified(value: datetime) -> str:

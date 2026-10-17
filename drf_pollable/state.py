@@ -23,6 +23,11 @@ from django.core.cache import caches
 #: State is short-lived; a client that stops polling should not linger forever.
 STATE_TTL = 3600
 
+#: How long we remember when a value first took its current version. Longer
+#: than STATE_TTL: this describes the resource, not a particular caller, and a
+#: value that sits unchanged for hours must keep its original timestamp.
+VERSION_SEEN_TTL = 86400
+
 
 @dataclass
 class ClientPollState:
@@ -68,6 +73,18 @@ def state_key(endpoint_name: str, request, object_id: Any = None) -> str:
     return f"drf_pollable:state:{digest}"
 
 
+def version_seen_key(endpoint_name: str, object_id: Any = None) -> str:
+    """Cache key for the *shared* version observation for one object.
+
+    Deliberately not keyed by client: when a value changed is a property of the
+    resource, and every caller must be told the same thing.
+    """
+    scope = object_id if object_id is not None else "-"
+    raw = f"{endpoint_name}|{scope}"
+    digest = hashlib.blake2b(raw.encode("utf-8"), digest_size=12).hexdigest()
+    return f"drf_pollable:seen:{digest}"
+
+
 class PollStateStore:
     """Thin wrapper over a Django cache alias."""
 
@@ -106,6 +123,29 @@ class PollStateStore:
         )
         self._write(key, new_state)
         return new_state
+
+    def changed_at(self, key: str, version: str) -> float:
+        """Unix time at which this object's value first took ``version``.
+
+        Falls back to *now* whenever there is no trustworthy earlier
+        observation -- a cache miss, a different version, or a broken cache.
+        Reporting "just now" can only cost an extra ``200``; reporting an older
+        time than the truth would hand a client a stale ``304``.
+        """
+        now = time.time()
+        try:
+            raw = self.cache.get(key)
+        except Exception:  # pragma: no cover - a broken cache must not 500 a poll
+            return now
+        if isinstance(raw, dict) and raw.get("version") == version:
+            seen = raw.get("seen_at")
+            if isinstance(seen, (int, float)) and 0 < seen <= now:
+                return float(seen)
+        try:
+            self.cache.set(key, {"version": version, "seen_at": now}, VERSION_SEEN_TTL)
+        except Exception:  # pragma: no cover - best effort only
+            pass
+        return now
 
     def touch(self, key: str) -> None:
         """Record a poll attempt without changing either streak."""

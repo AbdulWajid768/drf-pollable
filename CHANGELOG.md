@@ -51,6 +51,15 @@ Framework from a model field, instance, queryset, or callable.
 - `drf_pollable.testing` helpers: `clear_poll_state`, `poll_until`,
   `assert_poll_headers`, `assert_not_modified`
 
+### Fixed
+
+- `If-Modified-Since` could answer a changed value with a stale `304`. The
+  `Last-Modified` timestamp now tracks when the current value was first
+  observed, so it moves with the value exactly as the `ETag` does, instead of
+  trusting an `auto_now` column that `QuerySet.update()` never fires. Because
+  HTTP dates have one-second resolution, a modification within the second it
+  was issued is reported as a full `200` rather than risked as a `304`.
+
 ### Notes
 
 - Version tokens hash the **value**, not a timestamp field. An `auto_now` column

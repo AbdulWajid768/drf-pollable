@@ -298,7 +298,12 @@ ETag: "a844bf4f973cc84b8110"
 Retry-After: 5
 ```
 
-`Last-Modified` / `If-Modified-Since` work too. For hot endpoints,
+`Last-Modified` / `If-Modified-Since` work too, and the timestamp tracks the
+**value** for the same reason the `ETag` does: it reports when the current
+value was first seen, not an `auto_now` column that `QuerySet.update()` leaves
+untouched. Because HTTP dates carry only one-second resolution, a change
+within the second it was issued returns a full `200` rather than risk a stale
+`304`. For hot endpoints,
 `cache_timeout=N` caches the computed value so a burst of pollers doesn't each
 hit the database (per-user by default; set `cache_vary_on_user=False` only when
 the data is identical for everyone).

@@ -1,7 +1,35 @@
 """Core polling behaviour: value, envelope, headers, 304, done_when."""
 
+import time
+from contextlib import contextmanager
+from datetime import datetime
+from datetime import timezone as dt_timezone
+from unittest import mock
+
+from drf_pollable.headers import format_last_modified
+
 from .base import PollTestCase
 from .testapp.models import Order
+
+
+def _now_plus(seconds: int) -> datetime:
+    return datetime.fromtimestamp(int(time.time()) + seconds, tz=dt_timezone.utc)
+
+
+@contextmanager
+def _one_second_later():
+    """Run the block as if a second of wall-clock had passed.
+
+    Last-Modified has one-second resolution, so a test that re-polls instantly
+    cannot exercise the 304 path at all; sleeping for real would just make the
+    suite slower.
+    """
+    later = time.time() + 1
+    with (
+        mock.patch("drf_pollable.headers.time.time", return_value=later),
+        mock.patch("drf_pollable.state.time.time", return_value=later),
+    ):
+        yield
 
 
 class FieldPollingTests(PollTestCase):
@@ -123,7 +151,10 @@ class ConditionalRequestTests(PollTestCase):
 
     def test_if_modified_since_returns_304(self):
         last_modified = self.poll(self.url)["Last-Modified"]
-        response = self.client.get(self.url, HTTP_IF_MODIFIED_SINCE=last_modified)
+        # Poll again a second later, as any real client would: Last-Modified is
+        # a weak validator and says nothing within the second it was issued.
+        with _one_second_later():
+            response = self.client.get(self.url, HTTP_IF_MODIFIED_SINCE=last_modified)
         self.assertEqual(response.status_code, 304)
 
     def test_stale_if_modified_since_returns_200(self):
@@ -133,6 +164,39 @@ class ConditionalRequestTests(PollTestCase):
     def test_garbage_if_modified_since_returns_200(self):
         response = self.client.get(self.url, HTTP_IF_MODIFIED_SINCE="not-a-date")
         self.assertEqual(response.status_code, 200)
+
+    def test_if_modified_since_sees_a_change_auto_now_missed(self):
+        # QuerySet.update() does not fire auto_now, so updated_at still holds
+        # the original time while the value has genuinely changed. Answering
+        # If-Modified-Since from that column alone would strand a client on a
+        # 304 forever -- the same stale-304 trap make_version avoids for ETag.
+        first = self.poll(self.url)
+        last_modified = first["Last-Modified"]
+        before = Order.objects.values_list("updated_at", flat=True).get(pk=self.order.pk)
+
+        Order.objects.filter(pk=self.order.pk).update(status="shipped")
+
+        after = Order.objects.values_list("updated_at", flat=True).get(pk=self.order.pk)
+        self.assertEqual(before, after, "precondition: auto_now must not have fired")
+
+        response = self.client.get(self.url, HTTP_IF_MODIFIED_SINCE=last_modified)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["value"], "shipped")
+
+    def test_last_modified_advances_when_the_value_changes(self):
+        self.poll(self.url)
+        Order.objects.filter(pk=self.order.pk).update(status="shipped")
+        with _one_second_later():
+            second = self.poll(self.url)["Last-Modified"]
+        # The new value was observed a second after the old one, so the
+        # timestamp must have moved with it rather than tracking updated_at.
+        self.assertEqual(second, format_last_modified(_now_plus(1)))
+
+    def test_unchanged_value_keeps_a_stable_last_modified(self):
+        # The timestamp must not creep forward on every poll, or a client
+        # using If-Modified-Since would never get a 304.
+        first = self.poll(self.url)["Last-Modified"]
+        self.assertEqual(self.poll(self.url)["Last-Modified"], first)
 
     def test_if_none_match_wins_over_if_modified_since(self):
         # RFC 9110: a present If-None-Match is decisive, even when it misses
