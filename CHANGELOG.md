@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] — 2026-10-17
+
+Declares the public API stable. **No functional change from 0.1.0** — the
+library code is byte-identical; this release exists so the version number and
+the `Production/Stable` classifier say the same thing as the feature set.
+
+### Changed
+
+- `Development Status` is now `5 - Production/Stable`.
+- The GitHub Actions release workflow was removed; releases are built and
+  uploaded with `twine` directly.
+
 ## [0.1.0] — 2026-10-17
 
 First release. Generates read-only polling ("status") endpoints for Django REST
